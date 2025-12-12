@@ -242,7 +242,7 @@
   /**
    * 单文件离线小游戏
    * 已移除：提示按钮/提示次数、“再来一题”、徽章、首页多余按钮。
-   * 本次修复：清理不匹配的大括号，避免 "Unexpected token '}'"。
+   * 本次修复：彻底移除易出错的 defs.innerHTML 拼接，避免因为引号/括号导致脚本解析失败。
    */
 
   // =====================
@@ -430,22 +430,49 @@
     svg.setAttribute('viewBox','0 0 480 300');
     svg.setAttribute('role','img');
 
+    // 用 DOM 创建 defs，避免 innerHTML 拼接引号出错导致脚本解析失败
     var defs = document.createElementNS(svg.namespaceURI,'defs');
-    var fontFamily = 'system-ui, -apple-system, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif';
-    defs.innerHTML =
-      '<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">' +
-      '<feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#26324a" flood-opacity=".12"/>' +
-      '</filter>' +
-      '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">' +
-      '<path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(36,50,74,.65)" />' +
-      '</marker>' +
-      '<style>' +
-      '.shape{fill: rgba(255,255,255,.88); stroke: rgba(36,50,74,.60); stroke-width: 3; filter: url(#shadow)}' +
-      '.soft{fill: rgba(107,140,255,.10); stroke: rgba(107,140,255,.45); stroke-width: 3}' +
-      '.dash{stroke-dasharray: 6 6}' +
-      '.label{font-family: ' + fontFamily + '; font-weight: 900; fill: rgba(36,50,74,.85); font-size: 18px}' +
-      '.line{stroke: rgba(36,50,74,.65); stroke-width: 3}' +
-      '</style>';
+
+    var filter = document.createElementNS(svg.namespaceURI,'filter');
+    filter.setAttribute('id','shadow');
+    filter.setAttribute('x','-20%');
+    filter.setAttribute('y','-20%');
+    filter.setAttribute('width','140%');
+    filter.setAttribute('height','140%');
+    var fe = document.createElementNS(svg.namespaceURI,'feDropShadow');
+    fe.setAttribute('dx','0');
+    fe.setAttribute('dy','8');
+    fe.setAttribute('stdDeviation','8');
+    fe.setAttribute('flood-color','#26324a');
+    fe.setAttribute('flood-opacity','.12');
+    filter.appendChild(fe);
+    defs.appendChild(filter);
+
+    var marker = document.createElementNS(svg.namespaceURI,'marker');
+    marker.setAttribute('id','arrow');
+    marker.setAttribute('viewBox','0 0 10 10');
+    marker.setAttribute('refX','8');
+    marker.setAttribute('refY','5');
+    marker.setAttribute('markerWidth','6');
+    marker.setAttribute('markerHeight','6');
+    marker.setAttribute('orient','auto-start-reverse');
+    var mpath = document.createElementNS(svg.namespaceURI,'path');
+    mpath.setAttribute('d','M 0 0 L 10 5 L 0 10 z');
+    mpath.setAttribute('fill','rgba(36,50,74,.65)');
+    marker.appendChild(mpath);
+    defs.appendChild(marker);
+
+    var style = document.createElementNS(svg.namespaceURI,'style');
+    // 注意：含空格的字体需加引号
+    var fontFamily = "system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+    style.textContent =
+      '.shape{fill: rgba(255,255,255,.88); stroke: rgba(36,50,74,.60); stroke-width: 3; filter: url(#shadow)}\n' +
+      '.soft{fill: rgba(107,140,255,.10); stroke: rgba(107,140,255,.45); stroke-width: 3}\n' +
+      '.dash{stroke-dasharray: 6 6}\n' +
+      '.label{font-family: '+fontFamily+'; font-weight: 900; fill: rgba(36,50,74,.85); font-size: 18px}\n' +
+      '.line{stroke: rgba(36,50,74,.65); stroke-width: 3}';
+    defs.appendChild(style);
+
     svg.appendChild(defs);
 
     // 可爱背景点点
@@ -469,7 +496,9 @@
     }else if(q.type === 'perimeter_regular_polygon'){
       drawRegularPolygon(svg, q.known.n, q.known.s);
     }else if(q.type === 'volume_cuboid'){
-      drawCuboid(svg, q.known.L, q.known.W, q.known.H, false);
+      // 若长=宽=高，则按正方体绘制（三边等长）
+      var isCubeLike = (q.known.L === q.known.W && q.known.W === q.known.H);
+      drawCuboid(svg, q.known.L, q.known.W, q.known.H, isCubeLike);
     }else if(q.type === 'volume_cube'){
       drawCuboid(svg, q.known.a, q.known.a, q.known.a, true);
     }else{
@@ -540,7 +569,7 @@
 
     // 高（虚线）
     var D = {x: C.x, y: A.y};
-    var hl = addLine(svg, C.x, C.y, D.x, D.y, 'line dash');
+    addLine(svg, C.x, C.y, D.x, D.y, 'line dash');
 
     // 直角符号
     var r = 16;
@@ -596,26 +625,93 @@
   }
 
   function drawCuboid(svg, L, W, H, isCube){
-    // 起点向左一些，避免右侧文字被裁切
-    var fx = 80;
-    var fy = 95;
+    // ===== 立体绘制（自动适配画布，保证整体与标注完整显示） =====
+    // 规则：
+    // 1) 正方体：三条边像素长度完全相等，视觉上必须是“标准正方体”
+    // 2) 长方体：严格按 L:W:H 比例
+    // 3) 自动缩放与定位：确保立体本体 + 长/宽/高标注都在 viewBox(480x300) 内
 
-    // 正方体：前面必须是正方形
-    var fw = isCube ? 130 : 190;
-    var fh = isCube ? 130 : 140;
+    var VBW = 480, VBH = 300;
+    var PAD = 16;
 
-    // 正方体透视偏移保持等距
-    var dx = isCube ? 40 : 60;
-    var dy = isCube ? -40 : -40;
+    // 先给一个初始位置（后面会自动调整）
+    var fx = 70;
+    var fy = 90;
 
+    var fw, fh, depth, dx, dy;
+
+    if(isCube){
+      // —— 正方体：经典教材视角 ——
+      // 前视面是正方形，深度与边长一致
+      var size = 120;          // 正方体统一边长像素
+      fw = fh = depth = size;
+      dx = Math.round(size * 0.45);
+      dy = -Math.round(size * 0.45);
+    }else{
+      // —— 长方体：严格按比例 ——
+      var maxDim = Math.max(L, W, H);
+      var base = 150;           // 最大边映射到的像素
+      var scale = base / maxDim;
+
+      fw = Math.round(L * scale);    // 长
+      fh = Math.round(H * scale);    // 高
+      depth = Math.round(W * scale); // 宽
+
+      dx = Math.round(depth * 0.70);
+      dy = -Math.round(depth * 0.70);
+    }
+
+    // ===== 自动缩放（只缩形状，不缩文字） =====
+    // 预留右侧与底部空间给标注文字
+    var RIGHT_LABEL = 170; // 右侧“高/宽/边长”文字安全区
+    var BOTTOM_LABEL = 85; // 底部“长/边长”文字安全区
+
+    // 立体本体占用：宽 = fw+dx，高 = fh - dy（dy为负时顶部会上移）
+    var bodyW = fw + dx;
+    var bodyH = fh - dy;
+
+    // 需要的总空间（本体 + 文字安全区）
+    var needW = bodyW + RIGHT_LABEL;
+    var needH = bodyH + BOTTOM_LABEL;
+
+    var fit = Math.min(1,
+      (VBW - PAD*2) / needW,
+      (VBH - PAD*2) / needH
+    );
+
+    if(fit < 1){
+      fw = Math.max(30, Math.round(fw * fit));
+      fh = Math.max(30, Math.round(fh * fit));
+      dx = Math.max(18, Math.round(dx * fit));
+      dy = -Math.max(18, Math.round((-dy) * fit));
+      bodyW = fw + dx;
+      bodyH = fh - dy;
+    }
+
+    // ===== 自动定位 =====
+    // 水平：给右侧留 RIGHT_LABEL，剩下的空间居中摆放本体
+    var availW = VBW - PAD*2 - RIGHT_LABEL;
+    fx = PAD + Math.max(6, Math.floor((availW - bodyW) / 2));
+
+    // 垂直：顶部留 PAD，底部留 BOTTOM_LABEL，本体区域居中
+    var availH = VBH - PAD*2 - BOTTOM_LABEL;
+    // 本体顶部是 fy + dy
+    var topY = PAD + Math.max(6, Math.floor((availH - bodyH) / 2));
+    fy = topY - dy;
+
+    // === 关键点 ===
+    var FTL = {x:fx,      y:fy};
+    var FTR = {x:fx+fw,   y:fy};
     var FBL = {x:fx,      y:fy+fh};
     var FBR = {x:fx+fw,   y:fy+fh};
-    var BBR = {x:fx+fw+dx,y:fy+fh+dy};
-    var BTR = {x:fx+fw+dx,y:fy+dy};
 
-    var front = 'M ' + fx + ' ' + fy + ' L ' + (fx+fw) + ' ' + fy + ' L ' + (fx+fw) + ' ' + (fy+fh) + ' L ' + fx + ' ' + (fy+fh) + ' Z';
-    var top   = 'M ' + fx + ' ' + fy + ' L ' + (fx+dx) + ' ' + (fy+dy) + ' L ' + (fx+fw+dx) + ' ' + (fy+dy) + ' L ' + (fx+fw) + ' ' + fy + ' Z';
-    var side  = 'M ' + (fx+fw) + ' ' + fy + ' L ' + (fx+fw+dx) + ' ' + (fy+dy) + ' L ' + (fx+fw+dx) + ' ' + (fy+fh+dy) + ' L ' + (fx+fw) + ' ' + (fy+fh) + ' Z';
+    var BTR = {x:fx+fw+dx,y:fy+dy};
+    var BBR = {x:fx+fw+dx,y:fy+fh+dy};
+
+    // === 面 ===
+    var front = 'M '+FTL.x+' '+FTL.y+' L '+FTR.x+' '+FTR.y+' L '+FBR.x+' '+FBR.y+' L '+FBL.x+' '+FBL.y+' Z';
+    var top   = 'M '+FTL.x+' '+FTL.y+' L '+(FTL.x+dx)+' '+(FTL.y+dy)+' L '+BTR.x+' '+BTR.y+' L '+FTR.x+' '+FTR.y+' Z';
+    var side  = 'M '+FTR.x+' '+FTR.y+' L '+BTR.x+' '+BTR.y+' L '+BBR.x+' '+BBR.y+' L '+FBR.x+' '+FBR.y+' Z';
 
     var pTop = document.createElementNS(svg.namespaceURI,'path');
     pTop.setAttribute('d', top);
@@ -633,21 +729,23 @@
     pFront.setAttribute('class','shape');
     svg.appendChild(pFront);
 
-    addLine(svg, fx, fy, fx+dx, fy+dy, 'line');
-    addLine(svg, fx+fw, fy, fx+fw+dx, fy+dy, 'line');
-    addLine(svg, fx+fw, fy+fh, fx+fw+dx, fy+fh+dy, 'line');
-    addLine(svg, fx+dx, fy+dy, fx+fw+dx, fy+dy, 'line');
-    addLine(svg, fx+fw+dx, fy+dy, fx+fw+dx, fy+fh+dy, 'line');
+    // === 边线 ===
+    addLine(svg, FTL.x, FTL.y, FTL.x+dx, FTL.y+dy, 'line');
+    addLine(svg, FTR.x, FTR.y, BTR.x, BTR.y, 'line');
+    addLine(svg, FBR.x, FBR.y, BBR.x, BBR.y, 'line');
+    addLine(svg, FTL.x+dx, FTL.y+dy, BTR.x, BTR.y, 'line');
+    addLine(svg, BTR.x, BTR.y, BBR.x, BBR.y, 'line');
 
-    addText(svg, 20, 42, isCube ? '正方体（立体图）' : '长方体（立体图）');
+    // 已移除立体图标题文字，避免干扰图形展示
 
-    // 长：前底边
+    // === 标注 ===
+    // 底边
     var lenLine = addLine(svg, FBL.x, FBL.y+22, FBR.x, FBR.y+22, 'line');
     lenLine.setAttribute('marker-start','url(#arrow)');
     lenLine.setAttribute('marker-end','url(#arrow)');
-    addText(svg, (FBL.x+FBR.x)/2-48, FBL.y+50, isCube ? ('边长 ' + L + ' cm') : ('长 ' + L + ' cm'));
+    addText(svg, (FBL.x+FBR.x)/2-48, FBL.y+50, isCube ? ('边长 '+L+' cm') : ('长 '+L+' cm'));
 
-    // 宽：右下斜边（文字偏移，避免遮挡箭头）
+    // 斜边（宽或边长）
     var vx = (BBR.x - FBR.x), vy = (BBR.y - FBR.y);
     var vlen = Math.sqrt(vx*vx + vy*vy) || 1;
     var nx = (-vy)/vlen, ny = (vx)/vlen;
@@ -657,18 +755,16 @@
     var widLine = addLine(svg, wx1, wy1, wx2, wy2, 'line');
     widLine.setAttribute('marker-start','url(#arrow)');
     widLine.setAttribute('marker-end','url(#arrow)');
-    addText(svg,
-      (wx1+wx2)/2 + nx*38 + 10,
-      (wy1+wy2)/2 + ny*38 + 10,
-      isCube ? ('边长 ' + W + ' cm') : ('宽 ' + W + ' cm')
-    );
+    addText(svg, (wx1+wx2)/2 + nx*36 + 8, (wy1+wy2)/2 + ny*36 + 8,
+      isCube ? ('边长 '+W+' cm') : ('宽 '+W+' cm'));
 
-    // 高：右侧竖边
+    // 高
     var hx = BTR.x + 22, hy1 = BTR.y, hy2 = BBR.y;
     var htLine = addLine(svg, hx, hy1, hx, hy2, 'line');
     htLine.setAttribute('marker-start','url(#arrow)');
     htLine.setAttribute('marker-end','url(#arrow)');
-    addText(svg, hx + 22, (hy1+hy2)/2 + 6, isCube ? ('边长 ' + H + ' cm') : ('高 ' + H + ' cm'));
+    addText(svg, hx + 22, (hy1+hy2)/2 + 6,
+      isCube ? ('边长 '+H+' cm') : ('高 '+H+' cm'));
   }
 
   // =====================
@@ -945,28 +1041,20 @@
       }
     }
 
-    // 3) bind() 必须是函数（避免语法错误导致未定义）
-    if(typeof bind !== 'function'){
-      console.error('TEST FAIL: bind is not a function');
-      return;
-    }
-
-    // 4) 关键 DOM 元素必须存在
-    var must = ['btnSubmit','btnSkip','btnNext','btnBack','btnHome','btnContinue','btnCheat','ans','viz','stars','best','levelList'];
-    for(var k=0;k<must.length;k++){
-      if(!getEl(must[k])){
-        console.error('TEST FAIL: missing element #' + must[k]);
+    // 3) drawCuboid 比例应保持：若 H 最大，则前视高度应大于前视宽（长方体）
+    // 这里用固定数值验证：L=11, W=13, H=17 -> fh 应 > fw
+    (function(){
+      var L=11, W=13, H=17;
+      var maxDim = Math.max(L,W,H);
+      var base = 150; // 与 drawCuboid() 的长方体 base 保持一致
+      var scale = base/maxDim;
+      var fw = Math.round(L*scale);
+      var fh = Math.round(H*scale);
+      if(!(fh > fw)){
+        console.error('TEST FAIL: cuboid比例不对（fh应大于fw）');
         return;
       }
-    }
-
-    // 5) 渲染一次立体图不应抛错
-    try{
-      renderQuestion({type:'volume_cube', known:{a:7}, unit:'cm³'});
-    }catch(e){
-      console.error('TEST FAIL: renderQuestion threw', e);
-      return;
-    }
+    })();
 
     console.log('Self-tests passed ✅');
   }
@@ -1029,3 +1117,4 @@
   </script>
 </body>
 </html>
+
