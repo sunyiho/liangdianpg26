@@ -251,6 +251,8 @@
   var CONFIG = {
     minVal: 3,
     maxVal: 20,
+    solidMinVal: 3,
+    solidMaxVal: 15,
     questionsPerLevel: 8,
     levels: [
       { id: 1, name: '正多边形周长', desc: '周长 = 边数 × 边长（边数=3~10）', types: ['perimeter_regular_polygon'] },
@@ -388,9 +390,11 @@
     }
 
     if(type === 'volume_cuboid'){
-      var L2 = randInt(min,max);
-      var W2 = randInt(min,max);
-      var H2 = randInt(min,max);
+      var sMin = CONFIG.solidMinVal;
+      var sMax = CONFIG.solidMaxVal;
+      var L2 = randInt(sMin, sMax);
+      var W2 = randInt(sMin, sMax);
+      var H2 = randInt(sMin, sMax);
       var ans5 = L2*W2*H2;
       return {
         type: type,
@@ -403,7 +407,9 @@
     }
 
     if(type === 'volume_cube'){
-      var a2 = randInt(min,max);
+      var sMin2 = CONFIG.solidMinVal;
+      var sMax2 = CONFIG.solidMaxVal;
+      var a2 = randInt(sMin2, sMax2);
       var ans6 = a2*a2*a2;
       return {
         type: type,
@@ -1117,4 +1123,3 @@
   </script>
 </body>
 </html>
-
