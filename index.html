@@ -97,7 +97,6 @@
 
     .levelList{display:grid;gap:10px}
     .levelBtn{width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px;border-radius:18px;background:rgba(255,255,255,.8);box-shadow:0 10px 22px rgba(25,35,55,.10);border:2px solid rgba(99,114,138,.12)}
-    .levelBtn.locked{opacity:.55;filter:grayscale(.12)}
     .levelBtn .left{display:flex;align-items:center;gap:10px}
     .levelBtn .num{width:44px;height:44px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(107,140,255,.20),rgba(255,127,176,.18));font-size:18px;font-weight:1000}
     .levelBtn .name{font-weight:1000;font-size:16px}
@@ -150,7 +149,7 @@
       <hr style="border:none; border-top:2px dashed rgba(99,114,138,.18); margin: 16px 0">
 
       <h2 class="title" style="margin-top:0">选择关卡</h2>
-      <p class="subtitle">先从第 1 关开始，答对越多星星越多。通关会解锁下一关！</p>
+      <p class="subtitle">现在所有关卡都可直接进入，点击即可开始作答～</p>
 
       <div class="levelList" id="levelList"></div>
     </div>
@@ -243,6 +242,7 @@
    * 单文件离线小游戏
    * 已移除：提示按钮/提示次数、“再来一题”、徽章、首页多余按钮。
    * 本次修复：彻底移除易出错的 defs.innerHTML 拼接，避免因为引号/括号导致脚本解析失败。
+   * 本次需求：删除“未解锁”机制——所有关卡可直接点击进入。
    */
 
   // =====================
@@ -262,25 +262,22 @@
     scoring: {
       correct: 2,
       skipPenalty: 1,
-      unlockStarThreshold: 10
+      unlockStarThreshold: 10 // 仅保留展示，不再用于解锁
     }
   };
 
   // =====================
-  // 2) Storage（最高分、已解锁关卡）
+  // 2) Storage（最高分）
   // =====================
   var STORE_KEY = 'apv_game_v2';
   function loadStore(){
     try{
       var raw = localStorage.getItem(STORE_KEY);
-      if(!raw) return { bestStars: 0, unlocked: 1 };
+      if(!raw) return { bestStars: 0 };
       var d = JSON.parse(raw);
-      return {
-        bestStars: Number(d.bestStars || 0),
-        unlocked: Math.max(1, Number(d.unlocked || 1))
-      };
+      return { bestStars: Number(d.bestStars || 0) };
     }catch(e){
-      return { bestStars: 0, unlocked: 1 };
+      return { bestStars: 0 };
     }
   }
   function saveStore(){
@@ -632,51 +629,38 @@
 
   function drawCuboid(svg, L, W, H, isCube){
     // ===== 立体绘制（自动适配画布，保证整体与标注完整显示） =====
-    // 规则：
-    // 1) 正方体：三条边像素长度完全相等，视觉上必须是“标准正方体”
-    // 2) 长方体：严格按 L:W:H 比例
-    // 3) 自动缩放与定位：确保立体本体 + 长/宽/高标注都在 viewBox(480x300) 内
-
     var VBW = 480, VBH = 300;
     var PAD = 16;
 
-    // 先给一个初始位置（后面会自动调整）
     var fx = 70;
     var fy = 90;
 
     var fw, fh, depth, dx, dy;
 
     if(isCube){
-      // —— 正方体：经典教材视角 ——
-      // 前视面是正方形，深度与边长一致
-      var size = 120;          // 正方体统一边长像素
+      var size = 120;
       fw = fh = depth = size;
       dx = Math.round(size * 0.45);
       dy = -Math.round(size * 0.45);
     }else{
-      // —— 长方体：严格按比例 ——
       var maxDim = Math.max(L, W, H);
-      var base = 150;           // 最大边映射到的像素
+      var base = 150;
       var scale = base / maxDim;
 
-      fw = Math.round(L * scale);    // 长
-      fh = Math.round(H * scale);    // 高
-      depth = Math.round(W * scale); // 宽
+      fw = Math.round(L * scale);
+      fh = Math.round(H * scale);
+      depth = Math.round(W * scale);
 
       dx = Math.round(depth * 0.70);
       dy = -Math.round(depth * 0.70);
     }
 
-    // ===== 自动缩放（只缩形状，不缩文字） =====
-    // 预留右侧与底部空间给标注文字
-    var RIGHT_LABEL = 170; // 右侧“高/宽/边长”文字安全区
-    var BOTTOM_LABEL = 85; // 底部“长/边长”文字安全区
+    var RIGHT_LABEL = 170;
+    var BOTTOM_LABEL = 85;
 
-    // 立体本体占用：宽 = fw+dx，高 = fh - dy（dy为负时顶部会上移）
     var bodyW = fw + dx;
     var bodyH = fh - dy;
 
-    // 需要的总空间（本体 + 文字安全区）
     var needW = bodyW + RIGHT_LABEL;
     var needH = bodyH + BOTTOM_LABEL;
 
@@ -694,18 +678,13 @@
       bodyH = fh - dy;
     }
 
-    // ===== 自动定位 =====
-    // 水平：给右侧留 RIGHT_LABEL，剩下的空间居中摆放本体
     var availW = VBW - PAD*2 - RIGHT_LABEL;
     fx = PAD + Math.max(6, Math.floor((availW - bodyW) / 2));
 
-    // 垂直：顶部留 PAD，底部留 BOTTOM_LABEL，本体区域居中
     var availH = VBH - PAD*2 - BOTTOM_LABEL;
-    // 本体顶部是 fy + dy
     var topY = PAD + Math.max(6, Math.floor((availH - bodyH) / 2));
     fy = topY - dy;
 
-    // === 关键点 ===
     var FTL = {x:fx,      y:fy};
     var FTR = {x:fx+fw,   y:fy};
     var FBL = {x:fx,      y:fy+fh};
@@ -714,7 +693,6 @@
     var BTR = {x:fx+fw+dx,y:fy+dy};
     var BBR = {x:fx+fw+dx,y:fy+fh+dy};
 
-    // === 面 ===
     var front = 'M '+FTL.x+' '+FTL.y+' L '+FTR.x+' '+FTR.y+' L '+FBR.x+' '+FBR.y+' L '+FBL.x+' '+FBL.y+' Z';
     var top   = 'M '+FTL.x+' '+FTL.y+' L '+(FTL.x+dx)+' '+(FTL.y+dy)+' L '+BTR.x+' '+BTR.y+' L '+FTR.x+' '+FTR.y+' Z';
     var side  = 'M '+FTR.x+' '+FTR.y+' L '+BTR.x+' '+BTR.y+' L '+BBR.x+' '+BBR.y+' L '+FBR.x+' '+FBR.y+' Z';
@@ -735,23 +713,17 @@
     pFront.setAttribute('class','shape');
     svg.appendChild(pFront);
 
-    // === 边线 ===
     addLine(svg, FTL.x, FTL.y, FTL.x+dx, FTL.y+dy, 'line');
     addLine(svg, FTR.x, FTR.y, BTR.x, BTR.y, 'line');
     addLine(svg, FBR.x, FBR.y, BBR.x, BBR.y, 'line');
     addLine(svg, FTL.x+dx, FTL.y+dy, BTR.x, BTR.y, 'line');
     addLine(svg, BTR.x, BTR.y, BBR.x, BBR.y, 'line');
 
-    // 已移除立体图标题文字，避免干扰图形展示
-
-    // === 标注 ===
-    // 底边
     var lenLine = addLine(svg, FBL.x, FBL.y+22, FBR.x, FBR.y+22, 'line');
     lenLine.setAttribute('marker-start','url(#arrow)');
     lenLine.setAttribute('marker-end','url(#arrow)');
     addText(svg, (FBL.x+FBR.x)/2-48, FBL.y+50, isCube ? ('边长 '+L+' cm') : ('长 '+L+' cm'));
 
-    // 斜边（宽或边长）
     var vx = (BBR.x - FBR.x), vy = (BBR.y - FBR.y);
     var vlen = Math.sqrt(vx*vx + vy*vy) || 1;
     var nx = (-vy)/vlen, ny = (vx)/vlen;
@@ -764,7 +736,6 @@
     addText(svg, (wx1+wx2)/2 + nx*36 + 8, (wy1+wy2)/2 + ny*36 + 8,
       isCube ? ('边长 '+W+' cm') : ('宽 '+W+' cm'));
 
-    // 高
     var hx = BTR.x + 22, hy1 = BTR.y, hy2 = BBR.y;
     var htLine = addLine(svg, hx, hy1, hx, hy2, 'line');
     htLine.setAttribute('marker-start','url(#arrow)');
@@ -824,10 +795,9 @@
     for(var i=0;i<CONFIG.levels.length;i++){
       (function(idx){
         var lv = CONFIG.levels[idx];
-        var locked = lv.id > Store.unlocked;
 
         var btn = document.createElement('button');
-        btn.className = 'levelBtn' + (locked ? ' locked' : '');
+        btn.className = 'levelBtn';
         btn.type = 'button';
         btn.innerHTML =
           '<div class="left">' +
@@ -837,12 +807,9 @@
               '<div class="desc">' + lv.desc + '</div>' +
             '</div>' +
           '</div>' +
-          '<div style="font-weight:900; color:' + (locked ? 'rgba(36,50,74,.55)' : 'rgba(36,50,74,.85)') + '">' +
-            (locked ? '🔒 未解锁' : '✅ 可挑战') +
-          '</div>';
+          '<div style="font-weight:900; color:rgba(36,50,74,.85)">✅ 可挑战</div>';
 
         btn.addEventListener('click', function(){
-          if(locked){ toast('先通关前一关哦～'); return; }
           startLevel(idx);
         });
 
@@ -928,16 +895,11 @@
       toast('新纪录！');
     }
 
-    var lv = CONFIG.levels[State.levelIndex];
-    var passed = State.levelStars >= CONFIG.scoring.unlockStarThreshold;
-    if(passed){
-      Store.unlocked = Math.max(Store.unlocked, lv.id + 1);
-    }
-
     saveStore();
     syncTop();
     renderLevels();
 
+    var lv = CONFIG.levels[State.levelIndex];
     var nextId = lv.id + 1;
     var hasNext = nextId <= CONFIG.levels.length;
     var cont = getEl('btnContinue');
@@ -1025,7 +987,6 @@
   // 8) Self-tests（console）
   // =====================
   function runSelfTests(){
-    // 1) 三角形面积必须为整数
     for(var i=0;i<200;i++){
       var q = genQuestion({types:['area_triangle']});
       if(q.answer !== Math.floor(q.answer)){
@@ -1034,7 +995,6 @@
       }
     }
 
-    // 2) 正多边形周长正确
     for(var j=0;j<80;j++){
       var p = genQuestion({types:['perimeter_regular_polygon']});
       if(p.answer !== p.known.n * p.known.s){
@@ -1047,12 +1007,10 @@
       }
     }
 
-    // 3) drawCuboid 比例应保持：若 H 最大，则前视高度应大于前视宽（长方体）
-    // 这里用固定数值验证：L=11, W=13, H=17 -> fh 应 > fw
     (function(){
       var L=11, W=13, H=17;
       var maxDim = Math.max(L,W,H);
-      var base = 150; // 与 drawCuboid() 的长方体 base 保持一致
+      var base = 150;
       var scale = base/maxDim;
       var fw = Math.round(L*scale);
       var fh = Math.round(H*scale);
