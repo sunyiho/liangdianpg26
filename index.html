@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>面积、周长与体积</title>
+  <title>周长、面积与体积</title>
   <style>
     :root{
       --bg1:#fff7fb;
@@ -122,7 +122,7 @@
           </svg>
         </div>
         <div>
-          <h1>面积、周长与体积</h1>
+          <h1>周长、面积与体积</h1>
         </div>
       </div>
 
@@ -140,7 +140,7 @@
 
     <div class="card soft" id="home">
       <div class="center">
-        <div class="bigTitle">面积、周长与体积</div>
+        <div class="bigTitle">周长、面积与体积</div>
         <p class="subtitle" style="text-align:center; max-width:720px">
           通过可视化图形闯关，学会：周长、面积、体积公式。每题输入数字即可，单位会自动显示。
         </p>
@@ -256,7 +256,7 @@
     questionsPerLevel: 8,
     levels: [
       { id: 1, name: '正多边形周长', desc: '周长 = 边数 × 边长（边数=3~10）', types: ['perimeter_regular_polygon'] },
-      { id: 2, name: '平面图形面积', desc: '正方形/长方形/三角形', types: ['area_square','area_rectangle','area_triangle'] },
+      { id: 2, name: '平面图形面积', desc: '长方形/三角形', types: ['area_rectangle','area_rectangle','area_triangle'] },
       { id: 3, name: '立体体积（综合）', desc: '长方体/正方体', types: ['volume_cuboid','volume_cube'] }
     ],
     scoring: {
@@ -354,17 +354,23 @@
     }
 
     if(type === 'area_rectangle'){
+      // 这里明确生成“长方形”（避免 L===W 变成正方形题）
       var L = randInt(min,max);
       var W = randInt(min,max);
+      for(var t=0;t<80;t++){
+        if(L !== W) break;
+        W = randInt(min,max);
+      }
+      if(L === W){ W = clamp(W+1, min, max); }
+
       var ans3 = L*W;
-      var isSquare = (L === W);
       return {
         type: type,
         known: { L: L, W: W },
-        askText: isSquare ? '求正方形的面积。' : '求长方形的面积。',
+        askText: '求长方形的面积。',
         unit: 'cm²',
         answer: ans3,
-        steps: { equation: (isSquare ? ('面积 = 边长×边长 = ' + L + '×' + W + ' = ' + ans3) : ('面积 = 长×宽 = ' + L + '×' + W + ' = ' + ans3)) }
+        steps: { equation: '面积 = 长×宽 = ' + L + '×' + W + ' = ' + ans3 }
       };
     }
 
@@ -533,10 +539,35 @@
   }
 
   function drawRectangle(svg, L, W, isSquare){
-    var x = 140, y = 70;
-    var base = isSquare ? 150 : 200; // 正方形缩小一点，避免遮挡下方文字
-    var w = base;
-    var h = isSquare ? base : 140;
+    // 按“长:宽”比例绘制（自动缩放+居中），保证标注不出画布
+    var VBW = 480, VBH = 300;
+    var PAD = 18;
+    var TOP_SPACE = 54;      // 顶部标题/留白
+    var RIGHT_SPACE = 150;   // 右侧宽/边长标注安全区
+    var BOTTOM_SPACE = 86;   // 底部长/边长标注安全区
+
+    // 可用的形状区域
+    var maxW = VBW - PAD*2 - RIGHT_SPACE;
+    var maxH = VBH - PAD*2 - TOP_SPACE - BOTTOM_SPACE;
+
+    // 按比例缩放到最大可用区域
+    var scale = Math.min(maxW / Math.max(1, L), maxH / Math.max(1, W));
+    // 给一点“视觉填充”，避免太小
+    scale = Math.min(scale, 20);
+
+    var w = Math.max(90, Math.round(L * scale));
+    var h = Math.max(70, Math.round(W * scale));
+
+    // 再次确保不超出可用区（因为有最小值）
+    var fit2 = Math.min(1, maxW / w, maxH / h);
+    if(fit2 < 1){
+      w = Math.round(w * fit2);
+      h = Math.round(h * fit2);
+    }
+
+    // 居中定位
+    var x = PAD + Math.floor((maxW - w) / 2);
+    var y = PAD + TOP_SPACE + Math.floor((maxH - h) / 2);
 
     var rect = document.createElementNS(svg.namespaceURI,'rect');
     rect.setAttribute('x', x);
@@ -547,23 +578,55 @@
     rect.setAttribute('class','shape');
     svg.appendChild(rect);
 
+    // 底部：长/边长
     var lenLine = addLine(svg, x, y+h+22, x+w, y+h+22, 'line');
     lenLine.setAttribute('marker-start','url(#arrow)');
     lenLine.setAttribute('marker-end','url(#arrow)');
-    addText(svg, x+w/2-52, y+h+50, isSquare ? ('边长 ' + L + ' cm') : ('长 ' + L + ' cm'));
+    addText(svg, x + w/2 - 52, y + h + 50, isSquare ? ('边长 ' + L + ' cm') : ('长 ' + L + ' cm'));
 
+    // 右侧：宽/边长
     var widLine = addLine(svg, x+w+22, y, x+w+22, y+h, 'line');
     widLine.setAttribute('marker-start','url(#arrow)');
     widLine.setAttribute('marker-end','url(#arrow)');
-    addText(svg, x+w+30, y+h/2+6, isSquare ? ('边长 ' + W + ' cm') : ('宽 ' + W + ' cm'));
+    addText(svg, x + w + 30, y + h/2 + 6, isSquare ? ('边长 ' + W + ' cm') : ('宽 ' + W + ' cm'));
 
     addText(svg, 20, 42, isSquare ? '正方形（平面图）' : '长方形（平面图）');
   }
 
   function drawTriangle(svg, b, h){
-    var A = {x:120, y:220};
-    var B = {x:360, y:220};
-    var C = {x:260, y:80};
+    // 按“底:高”比例绘制（自动缩放+居中），保证标注不出画布
+    var VBW = 480, VBH = 300;
+    var PAD = 18;
+    var TOP_SPACE = 54;
+    var RIGHT_SPACE = 150;
+    var BOTTOM_SPACE = 86;
+
+    var maxBase = VBW - PAD*2 - RIGHT_SPACE;
+    var maxHeight = VBH - PAD*2 - TOP_SPACE - BOTTOM_SPACE;
+
+    var scale = Math.min(maxBase / Math.max(1, b), maxHeight / Math.max(1, h));
+    scale = Math.min(scale, 22);
+
+    var basePx = Math.max(140, Math.round(b * scale));
+    var heightPx = Math.max(90, Math.round(h * scale));
+
+    var fit2 = Math.min(1, maxBase / basePx, maxHeight / heightPx);
+    if(fit2 < 1){
+      basePx = Math.round(basePx * fit2);
+      heightPx = Math.round(heightPx * fit2);
+    }
+
+    // 三角形放在可用区域中间
+    var usableW = maxBase;
+    var usableH = maxHeight;
+    var originX = PAD + Math.floor((usableW - basePx) / 2);
+    var baseY = PAD + TOP_SPACE + Math.floor((usableH - heightPx) / 2) + heightPx; // 底边y
+
+    var A = {x: originX, y: baseY};
+    var B = {x: originX + basePx, y: baseY};
+
+    // 顶点稍微偏右，视觉更像“斜三角形”，但严格保留底/高比例
+    var C = {x: originX + Math.round(basePx*0.6), y: baseY - heightPx};
 
     var path = document.createElementNS(svg.namespaceURI,'path');
     path.setAttribute('d', 'M ' + A.x + ' ' + A.y + ' L ' + B.x + ' ' + B.y + ' L ' + C.x + ' ' + C.y + ' Z');
@@ -583,9 +646,9 @@
     svg.appendChild(right);
 
     // 底
-    var base = addLine(svg, A.x, A.y+22, B.x, A.y+22, 'line');
-    base.setAttribute('marker-start','url(#arrow)');
-    base.setAttribute('marker-end','url(#arrow)');
+    var baseLine = addLine(svg, A.x, A.y+22, B.x, A.y+22, 'line');
+    baseLine.setAttribute('marker-start','url(#arrow)');
+    baseLine.setAttribute('marker-end','url(#arrow)');
     addText(svg, (A.x+B.x)/2-46, A.y+50, '底 ' + b + ' cm');
 
     // 高
